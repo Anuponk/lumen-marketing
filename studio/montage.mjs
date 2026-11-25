@@ -148,13 +148,13 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
     game = '[pointed]';
   }
   filters.push(game + "[win]overlay=53:255:enable='gte(t," + cut + ")'[celebration]");
-  filters.push("[celebration][4:v]overlay=0:0:enable='gte(t," + timeline.cardStarts + ")',format=yuv420p[out]");
+  filters.push("[celebration][4:v]overlay=0:0:enable='gte(t," + timeline.cardStarts + ")',scale=out_range=tv,format=yuv420p[out]");
   await writeFile(join(work, 'montage.ffmpeg'), filters.join(';\n'));
   const audio = options.music ? ['-stream_loop', '-1', '-i', options.music] : [];
   await run(ffmpeg, [...input, ...audio, '-filter_complex_threads', '2', '-/filter_complex', 'montage.ffmpeg',
     '-map', '[out]', ...(options.music ? ['-map', (options.finger ? '6' : '5') + ':a:0', '-c:a', 'aac', '-b:a', '160k',
       '-af', 'volume=0.34,afade=t=in:st=0:d=0.4,afade=t=out:st=' + (options.duration - 1.5) + ':d=1.5'] : ['-an']),
-    '-c:v', 'libx264', '-threads', '5', '-preset', 'veryfast', '-crf', '18', '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p',
+    '-c:v', 'libx264', '-threads', '5', '-preset', 'veryfast', '-crf', '18', '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p', '-color_range', 'tv',
     '-r', String(frameRate), '-t', String(options.duration), '-movflags', '+faststart', options.output], { cwd: work });
 }
 
