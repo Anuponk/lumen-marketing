@@ -57,16 +57,16 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
 
     const gestures = [];
     let started, captureOn = false;
-    const cellPoint = async ({ row, column }) => {
-      const cell = page.locator('#board .cell').nth(row * initial.n + column);
-      const box = await cell.boundingBox();
-      if (!box) throw Error('Board cell lost its layout');
+    const locatorPoint = async (locator) => {
+      const box = await locator.boundingBox();
+      if (!box) throw Error('Touch target lost its layout');
       const x = Math.round(box.x + box.width / 2), y = Math.round(box.y + box.height / 2);
-      await cell.evaluate((element, { x, y }) => {
-        if (!element.contains(document.elementFromPoint(x, y))) throw Error('An overlay intercepts the board tap');
+      await locator.evaluate((element, { x, y }) => {
+        if (!element.contains(document.elementFromPoint(x, y))) throw Error('An overlay intercepts the tap');
       }, { x, y });
       return { x, y };
     };
+    const cellPoint = ({ row, column }) => locatorPoint(page.locator('#board .cell').nth(row * initial.n + column));
     async function playMove(move, point = null) {
       const { row, column, value } = move;
       const { x, y } = point ?? await cellPoint(move);
@@ -78,30 +78,38 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
         assert.equal(actual, (before + 1) % 3, 'A true touch must advance the game cell state');
         if (captureOn) gestures.push({ at, x, y, row, column, state: actual, reason: move.reason });
         before = actual;
-        if (before !== value) await delay(155);
+        if (before !== value) await delay(move.interval ?? 155);
       }
     }
     for (const move of moves.preparation) await playMove(move);
     const board = await page.locator('#board').boundingBox();
+    const lesson = moves.visual && { ...moves.visual,
+      cells: await page.locator('#board .cell').evaluateAll(cells => cells.map(cell => {
+        const { x, y, width, height } = cell.getBoundingClientRect();
+        return { x, y, width, height };
+      })) };
     const qaBanner = await page.locator('.qa-banner').boundingBox();
     const victoryCropTop = Math.ceil((qaBanner?.y ?? 0) + (qaBanner?.height ?? 0)) + 1;
     const beforeCapture = await shotState();
     assert.equal(beforeCapture.state.flat().filter(v => v === 2).length, selected.quest.size - timeline.visibleGuardians);
     await mkdir(join(work, 'frames'));
     const firstFrame = 'frames/000000.jpg';
-    await page.screenshot({ path: join(work, firstFrame), type: 'jpeg', quality: 96 });
     const session = await context.newCDPSession(page);
     await session.send('Emulation.setDeviceMetricsOverride', { ...viewport, mobile: true, deviceScaleFactor: scale,
       screenWidth: viewport.width, screenHeight: viewport.height });
     const { visualViewport } = await session.send('Page.getLayoutMetrics');
-    const clip = { x: visualViewport.pageX, y: visualViewport.pageY, ...viewport, scale: visualViewport.scale };
+    const clip = { x: visualViewport.pageX, y: visualViewport.pageY, ...viewport,
+      scale: visualViewport.scale * (lesson ? 2 / scale : 1) };
+    const screenshot = () => session.send('Page.captureScreenshot', {
+      format: 'jpeg', quality: lesson ? 92 : 94, optimizeForSpeed: Boolean(lesson), captureBeyondViewport: false, clip,
+    });
+    const initialImage = await screenshot();
+    await writeFile(join(work, firstFrame), Buffer.from(initialImage.data, 'base64'));
     const frames = [{ time: 0, file: firstFrame }];
     const record = async () => {
       while (captureOn && (performance.now() - started) / 1000 < timeline.cardStarts) {
         const timestamp = performance.now();
-        const { data } = await session.send('Page.captureScreenshot', {
-          format: 'jpeg', quality: 94, captureBeyondViewport: false, clip,
-        });
+        const { data } = await screenshot();
         const time = (timestamp - started) / 1000;
         if (time > 0.001) {
           const file = 'frames/' + String(frames.length).padStart(6, '0') + '.jpg';
@@ -116,10 +124,9 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
     const recording = record().then(() => null, error => error);
     const sleepUntil = t => delay(Math.max(0, t * 1000 - (performance.now() - started)));
     for (const [i, move] of moves.visible.entries()) {
-      const point = await cellPoint(move);
-      const t = timeline.start + (timeline.finalTap - timeline.start) * i / (moves.visible.length - 1);
+      const t = move.at ?? (timeline.start + (timeline.finalTap - timeline.start) * i / (moves.visible.length - 1));
       await sleepUntil(t);
-      await playMove(move, point);
+      await playMove(move);
     }
     await page.waitForFunction(() => lumenDiagnostics.snapshot().celebrated, null, { timeout: 4000 });
     const ended = (performance.now() - started) / 1000;
@@ -132,11 +139,15 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
     captureOn = false;
     const recordingError = await recording;
     if (recordingError) throw recordingError;
-    assert(frames.length >= timeline.cardStarts * 7, 'The capture must sustain enough frames for the real animation');
+    const minFramesPerSecond = lesson ? 5.5 : 7;
+    const maxGap = Math.max(...frames.slice(1).map((frame, index) => frame.time - frames[index].time));
+    assert(frames.length >= timeline.cardStarts * minFramesPerSecond && (!lesson || maxGap < 1.1),
+      'The recording must preserve the timing of the real animation (' + frames.length +
+      ' frames, longest gap ' + maxGap.toFixed(2) + 's)');
     assert(reveal < timeline.cardStarts - 0.8, 'The real victory must be visible before the end card');
     assert.deepEqual(runtimeErrors, [], 'The game must render without script errors');
     const results = { language: options.lang, quest: selected.quest.id, size: selected.quest.size,
-      board, victoryCropTop, startedGuardians: beforeCapture.state.flat().filter(v => v === 2).length,
+      board, lesson, victoryCropTop, startedGuardians: beforeCapture.state.flat().filter(v => v === 2).length,
       gestures, frames, ended, reveal, blockedHosts: [...blocked],
       victoryText: await page.locator('#skyRevealTitle').textContent() };
     await writeFile(join(work, 'capture.json'), JSON.stringify(results, null, 2));

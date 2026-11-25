@@ -28,8 +28,8 @@ Chaque commande crée `output/lumen-gameplay-trailer-<lang>.mp4` et son rapport 
 | `--lang` | `fr`, `en` ou `es`. Langue de l’interface et du montage. |
 | `--quest` | Identifiant stable ou numéro, p. ex. `base-q006` ou `6`. |
 | `--size`, `--constellation`, `--difficulty` | Taille, identifiant de constellation et difficulté. `easy`, `medium`, `hard` et `expert` sont aussi reconnus. |
-| `--scenario` | `gameplay` montre trois placements. `last-guardian` laisse un temps de réflexion avant le dernier placement. |
-| `--duration`, `--speed` | Durée de 20 à 25 secondes entières, 24 par défaut. Vitesse de 0,7 à 1,25 avec un point décimal, 1 par défaut. |
+| `--scenario` | `gameplay` montre trois placements. `last-guardian` laisse un temps de réflexion avant le dernier placement. `rules` enseigne les règles et gestes en français. |
+| `--duration`, `--speed` | Durée de 20 à 25 secondes pour les bandes-annonces, 24 par défaut, et de 36 à 50 secondes pour `rules`, 38 par défaut. Vitesse de 0,7 à 1,25 avec un point décimal, 1 par défaut. |
 | `--copy` | Fichier JSON facultatif avec les champs `hook`, `constellations`, `free`, `play`, `url`. |
 | `--no-finger` | Désactive le doigt animé. |
 | `--music` | Piste locale dont vous détenez les droits nécessaires. Encodage AAC avec fondus. |
@@ -37,6 +37,20 @@ Chaque commande crée `output/lumen-gameplay-trailer-<lang>.mp4` et son rapport 
 | `--keep-capture` | Conserve le dossier temporaire avec les images et `capture.json`. |
 
 La sélection couvre les quêtes du catalogue à grille historique, après les deux quêtes d’apprentissage. `--help` liste les options.
+
+### Vidéo pédagogique « Comment jouer à Lumen ? »
+
+Le scénario `rules` présente une grille facile 6 × 6. Les quatre règles restent affichées pendant toute la vidéo et les surlignages relient chacune à la vraie grille. Une voix de synthèse française explique la mécanique. Une musique d’ambiance originale est générée localement et mixée en retrait.
+
+```sh
+git clone https://github.com/Anuponk/project-menlu.git ../lumen-video-rules-reference
+git -C ../lumen-video-rules-reference checkout --detach b8cdf08dda798bfb5fdc7e16c0f0a6f84c89fe2b
+npm run video:generate -- --lang fr --scenario rules
+```
+
+Le résultat est `output/lumen-comment-jouer-fr.mp4`, avec un rapport JSON des appuis et du contrôle FFprobe. La durée par défaut est de 38 secondes, avec une plage de 36 à 50 secondes. `--no-voice` coupe la narration, `--no-music` coupe la musique, et les deux options ensemble donnent une version silencieuse. La quête standard est `base-q006`. Une autre quête facile 6 × 6 est utilisable si sa topologie permet les démonstrations. Le jeu web de référence est `1.11.1+799`, [commit `b8cdf08`](https://github.com/Anuponk/project-menlu/commit/b8cdf08dda798bfb5fdc7e16c0f0a6f84c89fe2b). Les scénarios promotionnels conservent leur source et leurs propres options de durée.
+
+La séparation par difficulté concerne la taille, la logique de résolution et l’assistance guidée. Les quatre règles de placement sont communes. Sources [règles officielles](https://lumen.nopuna.fr/comment-jouer.html), [spécification de gameplay](https://github.com/Anuponk/project-menlu/blob/b8cdf08dda798bfb5fdc7e16c0f0a6f84c89fe2b/docs/GAMEPLAY.md) et [moteur de validation](https://github.com/Anuponk/project-menlu/blob/b8cdf08dda798bfb5fdc7e16c0f0a6f84c89fe2b/src/game/engine.js).
 
 ### De la grille au MP4
 

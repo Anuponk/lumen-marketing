@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 import { selectQuest, planMoves, serveGame } from './game.mjs';
 import { captureGame, launchBrowser } from './capture.mjs';
 import { copy, scenarios } from './scenarios.mjs';
+import { planRules } from './rules.mjs';
 import { encode, renderArtwork, run, verify } from './montage.mjs';
 
 const studio = dirname(fileURLToPath(import.meta.url));
@@ -15,10 +16,10 @@ const spec = JSON.parse(await readFile(join(studio, 'source.json'), 'utf8'));
 const strings = ['lang', 'scenario', 'duration', 'quest', 'constellation', 'difficulty', 'size', 'speed',
   'copy', 'output', 'music', 'game', 'sha', 'chrome', 'ffmpeg', 'ffprobe'];
 const { values } = parseArgs({ options: { ...Object.fromEntries(strings.map(name => [name, { type: 'string' }])),
-  'no-finger': { type: 'boolean' }, 'keep-capture': { type: 'boolean' }, help: { type: 'boolean' } } });
+  'no-finger': { type: 'boolean' }, 'no-music': { type: 'boolean' }, 'no-voice': { type: 'boolean' }, 'keep-capture': { type: 'boolean' }, help: { type: 'boolean' } } });
 if (values.help) {
-  console.log('npm run video:generate -- --lang fr --scenario gameplay --duration 24 [--game PATH] [--output FILE]');
-  console.log('Options: --quest ID|NUMBER, --constellation ID, --difficulty LEVEL, --size N, --speed 0.7–1.25, --copy JSON, --music FILE, --no-finger, --keep-capture, --sha HASH, --chrome PATH, --ffmpeg PATH, --ffprobe PATH');
+  console.log('npm run video:generate -- --lang fr --scenario gameplay|last-guardian|rules [--duration SECONDS] [--game PATH] [--output FILE]');
+  console.log('Options: --quest ID|NUMBER, --constellation ID, --difficulty LEVEL, --size N, --speed 0.7–1.25, --copy JSON, --music FILE, --no-music, --no-voice, --no-finger, --keep-capture, --sha HASH, --chrome PATH, --ffmpeg PATH, --ffprobe PATH');
 } else {
   await main();
 }
@@ -26,30 +27,42 @@ if (values.help) {
 async function main() {
   const lang = values.lang || 'fr', scenario = values.scenario || 'gameplay';
   assert(Object.hasOwn(copy, lang) && Object.hasOwn(scenarios, scenario), 'Unsupported language or scenario');
-  const duration = Number(values.duration ?? 24), speed = Number(values.speed ?? 1);
-  assert(duration >= 20 && duration <= 25 && Number.isInteger(duration), 'Duration must be 20–25 whole seconds');
-  assert(speed >= 0.7 && speed <= 1.25, 'Speed must be between 0.7 and 1.25');
-  const scale = duration / 24;
+  const rules = scenario === 'rules';
   const timeline = { ...scenarios[scenario] };
-  timeline.cardStarts *= scale;
-  timeline.finalTap *= scale;
-  timeline.start = timeline.finalTap - (scenarios[scenario].finalTap - scenarios[scenario].start) * scale / speed;
-  timeline.start = Math.max(3.23, timeline.start);
-  const gameRoot = resolve(values.game || process.env.LUMEN_GAME_ROOT || join(studio, '..', '..', 'lumen-video-game-reference'));
+  const duration = Number(values.duration ?? timeline.duration ?? 24), speed = Number(values.speed ?? 1);
+  const min = timeline.min ?? 20, max = timeline.max ?? 25;
+  assert(duration >= min && duration <= max && Number.isInteger(duration), 'Duration must be ' + min + '–' + max + ' whole seconds');
+  assert(!rules || lang === 'fr', 'The rules lesson is available in French');
+  assert(speed >= 0.7 && speed <= 1.25, 'Speed must be between 0.7 and 1.25');
+  timeline.ratio = duration / (timeline.duration ?? 24);
+  timeline.speed = speed;
+  timeline.cardStarts *= timeline.ratio;
+  if (!rules) {
+    timeline.finalTap *= timeline.ratio;
+    timeline.start = Math.max(3.23, timeline.finalTap -
+      (scenarios[scenario].finalTap - scenarios[scenario].start) * timeline.ratio / speed);
+  }
+  const source = rules ? spec.rules : spec;
+  const gameRoot = resolve(values.game || process.env.LUMEN_GAME_ROOT ||
+    join(studio, '..', '..', source.folder || 'lumen-video-game-reference'));
   const sha = (await run('git', ['rev-parse', 'HEAD'], { cwd: gameRoot })).trim();
-  assert.equal(sha, values.sha || spec.sha, 'The game checkout must match the pinned source SHA');
+  assert.equal(sha, values.sha || source.sha, 'The game checkout must match the pinned source SHA');
   assert.equal((await run('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: gameRoot })).trim(), '',
     'Use a clean source checkout');
   const ffmpeg = values.ffmpeg || process.env.FFMPEG || 'ffmpeg', ffprobe = values.ffprobe || process.env.FFPROBE || 'ffprobe';
   const chrome = values.chrome || process.env.CHROME_PATH || await chromePath();
-  const output = resolve(values.output || 'output/lumen-gameplay-trailer-' + lang + '.mp4');
+  const output = resolve(values.output || 'output/lumen-' + (rules ? 'comment-jouer-' : 'gameplay-trailer-') + lang + '.mp4');
   assert(/\.mp4$/i.test(output), 'The output must have an .mp4 extension');
   const finger = values['no-finger'] ? null : join(studio, '..', 'assets', 'hand.png');
   const text = { ...copy[lang], ...(values.copy ? JSON.parse(await readFile(values.copy, 'utf8')) : {}) };
-  const options = { lang, duration, output, finger, music: values.music ? resolve(values.music) : null };
-  await Promise.all([run(ffmpeg, ['-version']), run(ffprobe, ['-version']), finger ? access(finger) : null]);
+  const voice = rules && !values['no-voice'] ? join(studio, '..', 'assets', 'rules-voice-fr.flac') : null;
+  const music = !values['no-music'] && values.music ? resolve(values.music) : null;
+  const ambient = rules && !values['no-music'] && !music;
+  const options = { lang, duration, output, finger, voice, music, ambient };
+  await Promise.all([run(ffmpeg, ['-version']), run(ffprobe, ['-version']), finger ? access(finger) : null, voice ? access(voice) : null]);
   const selected = await selectQuest(gameRoot, { ...values, size: Number(values.size) });
-  const moves = planMoves(selected, timeline.visibleGuardians);
+  let moves = planMoves(selected, timeline.visibleGuardians);
+  if (rules) moves = planRules(selected, moves, timeline);
   const work = await mkdtemp(join(tmpdir(), 'lumen-capture-'));
   const server = await serveGame(gameRoot);
   let browser;
@@ -58,13 +71,14 @@ async function main() {
     console.log('Capture ' + lang + ' · ' + selected.quest.id + ' · ' + sha.slice(0, 8));
     const capture = await captureGame(browser, server.origin, selected, moves, timeline, work, options);
     console.log(capture.frames.length + ' actual frames · ' + capture.gestures.length + ' touches · victory at ' + capture.reveal.toFixed(2) + ' s');
-    await renderArtwork(browser, gameRoot, work, text);
+    await renderArtwork(browser, gameRoot, work, text, capture, timeline);
     await mkdir(dirname(output), { recursive: true });
     await encode(ffmpeg, work, capture, timeline, options);
-    const proof = await verify(ffprobe, output, duration, !!options.music);
+    const proof = await verify(ffprobe, output, duration, Boolean(music || voice || ambient));
     const report = { ...proof, gameSha: sha, scenario, language: lang, quest: selected.quest.id,
       constellation: selected.quest.constellationId, boardSize: selected.quest.size, boardDifficulty: selected.quest.difficulty.label,
       startedGuardians: capture.startedGuardians, touchCount: capture.gestures.length, capturedFrames: capture.frames.length,
+      ...(rules ? { gestures: capture.gestures } : {}),
       victorySeconds: capture.reveal, victoryTitle: capture.victoryText, externalRequestsAllowed: 0 };
     await writeFile(output.replace(/\.mp4$/i, '.json'), JSON.stringify(report, null, 2) + '\n');
     console.log(JSON.stringify({ output, ...report }, null, 2));
