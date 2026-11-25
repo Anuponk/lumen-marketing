@@ -8,7 +8,7 @@ Le studio capture les écrans et les animations du jeu dans Chromium et produit 
 
 ### Installation et rendu
 
-Installer Git, Node.js 22 ou ultérieur avec npm, Chrome ou Chromium, FFmpeg avec `libx264` et FFprobe. Pour l’option musique, FFmpeg doit aussi proposer l’encodeur AAC. `npm ci` installe la version verrouillée de Playwright Core, qui utilise le navigateur local.
+Installer Git, Node.js 22 ou ultérieur avec npm, Chrome ou Chromium, FFmpeg récent avec `libx264` et FFprobe. Le montage a été validé avec FFmpeg et FFprobe 9.1. Pour l’option musique, FFmpeg doit aussi proposer l’encodeur AAC. `npm ci` installe la version verrouillée de Playwright Core, qui utilise le navigateur local.
 
 Depuis le dépôt marketing :
 

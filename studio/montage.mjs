@@ -111,10 +111,10 @@ function handTimeline(gestures, x, y, factor, top) {
 
 export async function encode(ffmpeg, work, capture, timeline, options) {
   const frames = capture.frames.filter(f => f.time < timeline.cardStarts);
-  const line = (f, i) => "file '" + f.file + "'\nduration " +
+  const line = (f, i) => "file '" + f.file + "'\noption framerate 1000\nduration " +
     Math.max(0.001, (frames[i + 1]?.time ?? timeline.cardStarts) - f.time).toFixed(5);
   await writeFile(join(work, 'video.ffconcat'), 'ffconcat version 1.0\n' +
-    frames.map(line).join('\n') + "\nfile '" + frames.at(-1).file + "'\n");
+    frames.map(line).join('\n') + "\nfile '" + frames.at(-1).file + "'\noption framerate 1000\n");
 
   // The board keeps a margin on the right and above the platform UI.
   const targetWidth = 910, gameX = 57, gameY = 502;
@@ -129,18 +129,14 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
   const input = ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'video.ffconcat'];
   for (const name of ['background', 'hook', 'signature', 'card']) input.push('-loop', '1', '-framerate', '30', '-i', name + '.png');
   const filters = [
-    '[0:v]fps=30,tpad=stop_duration=0.6:stop_mode=clone,scale=1080:1920:flags=lanczos,setsar=1,split=2[before][after]',
-    '[before]trim=end=' + boardCut + ',setpts=PTS-STARTPTS,tpad=stop_duration=' + (cut - boardCut) +
-      ':stop_mode=clone,trim=end=' + cut + ',crop=1080:' + ((bottom - top) * scale) + ':0:' + (top * scale) +
+    '[0:v]fps=30,setsar=1,split=2[before][after]',
+    '[before]trim=end=' + boardCut + ',tpad=stop_duration=' + (cut - boardCut + 0.1) +
+      ':stop_mode=clone,crop=1080:' + ((bottom - top) * scale) + ':0:' + (top * scale) +
       ',scale=' + targetWidth + ':-2[play]',
-    '[after]trim=start=' + cut + ':end=' + timeline.cardStarts + ',setpts=PTS-STARTPTS,crop=1080:' +
-      victoryHeight + ':0:' + victoryTop + ',scale=912:-2[win]',
-    '[1:v]format=rgba,split=2[playBg][winBg]',
-    '[playBg][play]overlay=' + gameX + ':' + gameY + ':shortest=1[screen]',
-    "[screen][2:v]overlay=0:0:shortest=1:enable='lt(t,3.0)'[intro]",
-    "[intro][3:v]overlay=0:0:shortest=1:enable='gte(t,3.0)'[signature]",
-    '[winBg][win]overlay=53:255:shortest=1[celebration]',
-    '[4:v]trim=duration=' + (options.duration - timeline.cardStarts) + ',setpts=PTS-STARTPTS,setsar=1[card]',
+    '[after]crop=1080:' + victoryHeight + ':0:' + victoryTop + ',scale=912:-2[win]',
+    '[1:v][play]overlay=' + gameX + ':' + gameY + ":enable='lt(t," + cut + ")'[screen]",
+    "[screen][2:v]overlay=0:0:enable='lt(t,3.0)'[intro]",
+    "[intro][3:v]overlay=0:0:enable='gte(t,3.0)*lt(t," + cut + ")'[signature]",
   ];
   let game = '[signature]';
   if (options.finger) {
@@ -148,13 +144,14 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
     const hand = handTimeline(capture.gestures, gameX, gameY, factor, top);
     filters.push('[5:v]scale=290:-2,format=rgba[hand]');
     filters.push("[signature][hand]overlay=x='" + hand.x + "':y='" + hand.y +
-      "':shortest=1:enable='between(t," + hand.from.toFixed(4) + ',' + hand.to.toFixed(4) + ")'[pointed]");
+      "':enable='between(t," + hand.from.toFixed(4) + ',' + hand.to.toFixed(4) + ")'[pointed]");
     game = '[pointed]';
   }
-  filters.push(game + '[celebration][card]concat=n=3:v=1:a=0,tpad=stop_duration=0.6:stop_mode=clone,format=yuv420p[out]');
+  filters.push(game + "[win]overlay=53:255:enable='gte(t," + cut + ")'[celebration]");
+  filters.push("[celebration][4:v]overlay=0:0:enable='gte(t," + timeline.cardStarts + ")',format=yuv420p[out]");
   await writeFile(join(work, 'montage.ffmpeg'), filters.join(';\n'));
   const audio = options.music ? ['-stream_loop', '-1', '-i', options.music] : [];
-  await run(ffmpeg, [...input, ...audio, '-filter_complex_threads', '2', '-filter_complex_script', 'montage.ffmpeg',
+  await run(ffmpeg, [...input, ...audio, '-filter_complex_threads', '2', '-/filter_complex', 'montage.ffmpeg',
     '-map', '[out]', ...(options.music ? ['-map', (options.finger ? '6' : '5') + ':a:0', '-c:a', 'aac', '-b:a', '160k',
       '-af', 'volume=0.34,afade=t=in:st=0:d=0.4,afade=t=out:st=' + (options.duration - 1.5) + ':d=1.5'] : ['-an']),
     '-c:v', 'libx264', '-threads', '5', '-preset', 'veryfast', '-crf', '18', '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p',
