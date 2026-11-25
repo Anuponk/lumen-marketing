@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { scale, viewport } from './capture.mjs';
+import { lesson } from './rules.mjs';
 
 const width = 1080, height = 1920, frameRate = 30;
 const escape = value => String(value).replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;',
@@ -41,9 +42,54 @@ const styles = `
   .free{font-size:52px;font-weight:650;letter-spacing:-1.4px;margin:33px 0 91px;color:#ffdc86}
   .cta{display:inline-block;border-radius:80px;padding:24px 66px;background:#ffdf8d;color:#13223b;font-size:43px;font-weight:700;box-shadow:0 0 56px #f8d36b31}
   .url{font-size:34px;margin:36px 0 0;color:#b3d6e9;letter-spacing:2px}
+  .rule-heading{position:absolute;top:169px;left:72px;width:866px;text-align:center}
+  .rule-heading strong{display:block;font-size:69px;font-weight:690;line-height:1.06;letter-spacing:-2px;margin-top:29px;text-wrap:balance}
+  .rule-detail{position:absolute;top:1442px;left:95px;width:820px;min-height:120px;border-top:2px solid #538293;
+    padding:27px 25px 0;text-align:center;color:#e2f3ff;font-size:42px;font-weight:580;line-height:1.23;text-wrap:balance}
+  .outline{position:absolute;border:3px solid #ffd982;border-radius:18px;background:#ffd98215}
+  .outline.anchor{border-color:#92f3ff;box-shadow:inset 0 0 17px #67dcef8f;background:transparent}
 `;
 
-export async function renderArtwork(browser, gameRoot, work, text) {
+function boardLayout(capture) {
+  const { board, lesson } = capture;
+  const targetWidth = 910, gameX = 57, gameY = 502;
+  return {
+    targetWidth, gameX, gameY, factor: targetWidth / viewport.width,
+    top: Math.max(0, Math.floor(board.y - 60)),
+    bottom: Math.min(viewport.height, Math.ceil(lesson ? lesson.undo.y + lesson.undo.height + 5 :
+      board.y + board.height + 6)),
+  };
+}
+
+function lessonArtwork(beat, capture) {
+  const { example, neighbor, placement, regions, undo, cells } = capture.lesson;
+  const { gameX, gameY, top, factor } = boardLayout(capture);
+  const boxes = new Map();
+  const box = (row, column, kind) => boxes.set(cells[row * capture.size + column], kind);
+  if (beat.focus === 'row' || beat.focus === 'column' || beat.focus === 'territory') {
+    for (const [row, values] of regions.entries()) {
+      for (const [column, region] of values.entries()) {
+        const hit = beat.focus === 'row' ? row === example.row : beat.focus === 'column' ? column === example.column :
+          region === regions[example.row][example.column];
+        if (hit) box(row, column, row === example.row && column === example.column ? 'anchor' : 'hint');
+      }
+    }
+  }
+  if (beat.focus === 'guardian') box(example.row, example.column, 'anchor');
+  if (beat.focus === 'diagonal') {
+    box(neighbor.guardian.row, neighbor.guardian.column, 'anchor');
+    box(neighbor.row, neighbor.column, 'hint');
+  }
+  if (beat.focus === 'placement') box(placement.row, placement.column, 'hint');
+  if (beat.focus === 'undo') boxes.set(undo, 'hint');
+  const outlines = [...boxes].map(([r, kind]) => '<div class="outline ' + kind + '" style="left:' +
+    (gameX + r.x * factor) + 'px;top:' + (gameY + (r.y - top) * factor) + 'px;width:' + (r.width * factor) +
+    'px;height:' + (r.height * factor) + 'px"></div>').join('');
+  return '<div class="rule-heading"><div class="brand">LUMEN</div><strong>' + escape(beat.title) +
+    '</strong></div><div class="rule-detail">' + escape(beat.detail) + '</div>' + outlines;
+}
+
+export async function renderArtwork(browser, gameRoot, work, text, capture, timeline) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1,
     serviceWorkers: 'block' });
   try {
@@ -66,6 +112,14 @@ export async function renderArtwork(browser, gameRoot, work, text) {
         '</div><div class="cta">' + escape(text.play) + '</div><div class="url">' + escape(text.url || 'lumen.nopuna.fr') +
         '</div></div>',
     };
+    if (capture?.lesson) {
+      for (const [index, beat] of lesson.entries()) designs['rule-' + index] = lessonArtwork(beat, capture);
+      const stills = lesson.map((beat, index) => "file 'rule-" + index + ".png'\noption framerate 1000\nduration " +
+        ((lesson[index + 1]?.at ?? (timeline.cardStarts / timeline.ratio)) * timeline.ratio -
+          beat.at * timeline.ratio).toFixed(5));
+      stills.push("file 'rule-" + (lesson.length - 1) + ".png'\noption framerate 1000");
+      await writeFile(join(work, 'rules.ffconcat'), 'ffconcat version 1.0\n' + stills.join('\n') + '\n');
+    }
     for (const [name, content] of Object.entries(designs)) {
       await page.setContent('<!doctype html><meta charset="utf-8"><style>' + styles + '</style>' + content);
       await page.evaluate(async () => { await document.fonts.ready; });
@@ -117,10 +171,7 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
     frames.map(line).join('\n') + "\nfile '" + frames.at(-1).file + "'\noption framerate 1000\n");
 
   // The board keeps a margin on the right and above the platform UI.
-  const targetWidth = 910, gameX = 57, gameY = 502;
-  const top = Math.max(0, Math.floor(capture.board.y - 60));
-  const bottom = Math.min(viewport.height, Math.ceil(capture.board.y + capture.board.height + 6));
-  const factor = targetWidth / viewport.width;
+  const { targetWidth, gameX, gameY, top, bottom, factor } = boardLayout(capture);
   const victoryTop = (capture.victoryCropTop ?? 64) * scale;
   const victoryHeight = 1830 - victoryTop;
   // Keep the board during the game's completion glow, then frame the celestial reveal.
@@ -135,16 +186,27 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
       ',scale=' + targetWidth + ':-2[play]',
     '[after]crop=1080:' + victoryHeight + ':0:' + victoryTop + ',scale=912:-2[win]',
     '[1:v][play]overlay=' + gameX + ':' + gameY + ":enable='lt(t," + cut + ")'[screen]",
-    "[screen][2:v]overlay=0:0:enable='lt(t,3.0)'[intro]",
-    "[intro][3:v]overlay=0:0:enable='gte(t,3.0)*lt(t," + cut + ")'[signature]",
+
   ];
+  let inputIndex = 5;
+  if (capture.lesson) {
+    input.push('-f', 'concat', '-safe', '0', '-i', 'rules.ffconcat');
+    filters.push("[" + inputIndex++ + ":v]fps=30[rules]");
+    filters.push("[screen][rules]overlay=0:0:enable='lt(t," + cut + ")'[signature]");
+  } else {
+    filters.push("[screen][2:v]overlay=0:0:enable='lt(t,3.0)'[intro]");
+    filters.push("[intro][3:v]overlay=0:0:enable='gte(t,3.0)*lt(t," + cut + ")'[signature]");
+  }
   let game = '[signature]';
   if (options.finger) {
     input.push('-loop', '1', '-framerate', '30', '-i', options.finger);
     const hand = handTimeline(capture.gestures, gameX, gameY, factor, top);
-    filters.push('[5:v]scale=290:-2,format=rgba[hand]');
+    const between = (from, to) => 'between(t,' + from.toFixed(4) + ',' + to.toFixed(4) + ')';
+    const active = capture.lesson ? capture.gestures.map(({ at }) => between(at - 0.38, at + 0.43)).join('+') :
+      between(hand.from, hand.to);
+    filters.push('[' + inputIndex++ + ':v]scale=290:-2,format=rgba[hand]');
     filters.push("[signature][hand]overlay=x='" + hand.x + "':y='" + hand.y +
-      "':enable='between(t," + hand.from.toFixed(4) + ',' + hand.to.toFixed(4) + ")'[pointed]");
+      "':enable='" + active + "'[pointed]");
     game = '[pointed]';
   }
   filters.push(game + "[win]overlay=53:255:enable='gte(t," + cut + ")'[celebration]");
@@ -152,7 +214,7 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
   await writeFile(join(work, 'montage.ffmpeg'), filters.join(';\n'));
   const audio = options.music ? ['-stream_loop', '-1', '-i', options.music] : [];
   await run(ffmpeg, [...input, ...audio, '-filter_complex_threads', '2', '-/filter_complex', 'montage.ffmpeg',
-    '-map', '[out]', ...(options.music ? ['-map', (options.finger ? '6' : '5') + ':a:0', '-c:a', 'aac', '-b:a', '160k',
+    '-map', '[out]', ...(options.music ? ['-map', inputIndex + ':a:0', '-c:a', 'aac', '-b:a', '160k',
       '-af', 'volume=0.34,afade=t=in:st=0:d=0.4,afade=t=out:st=' + (options.duration - 1.5) + ':d=1.5'] : ['-an']),
     '-c:v', 'libx264', '-threads', '5', '-preset', 'veryfast', '-crf', '18', '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p', '-color_range', 'tv',
     '-r', String(frameRate), '-t', String(options.duration), '-movflags', '+faststart', options.output], { cwd: work });

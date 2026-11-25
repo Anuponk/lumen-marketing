@@ -57,16 +57,26 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
 
     const gestures = [];
     let started, captureOn = false;
-    const cellPoint = async ({ row, column }) => {
-      const cell = page.locator('#board .cell').nth(row * initial.n + column);
-      const box = await cell.boundingBox();
-      if (!box) throw Error('Board cell lost its layout');
+    const locatorPoint = async (locator) => {
+      const box = await locator.boundingBox();
+      if (!box) throw Error('Touch target lost its layout');
       const x = Math.round(box.x + box.width / 2), y = Math.round(box.y + box.height / 2);
-      await cell.evaluate((element, { x, y }) => {
-        if (!element.contains(document.elementFromPoint(x, y))) throw Error('An overlay intercepts the board tap');
+      await locator.evaluate((element, { x, y }) => {
+        if (!element.contains(document.elementFromPoint(x, y))) throw Error('An overlay intercepts the tap');
       }, { x, y });
       return { x, y };
     };
+    const cellPoint = ({ row, column }) => locatorPoint(page.locator('#board .cell').nth(row * initial.n + column));
+    async function undoMove(move) {
+      const before = (await shotState()).state;
+      assert.equal(before[move.row][move.column], 1, 'Undo must follow a real exclusion');
+      const { x, y } = await locatorPoint(page.locator('#undo'));
+      const at = (performance.now() - started) / 1000;
+      await page.touchscreen.tap(x, y);
+      before[move.row][move.column] = 0;
+      assert.deepEqual((await shotState()).state, before, 'Undo must only restore the preceding state');
+      gestures.push({ at, x, y, row: move.row, column: move.column, state: 0, reason: move.reason });
+    }
     async function playMove(move, point = null) {
       const { row, column, value } = move;
       const { x, y } = point ?? await cellPoint(move);
@@ -78,11 +88,17 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
         assert.equal(actual, (before + 1) % 3, 'A true touch must advance the game cell state');
         if (captureOn) gestures.push({ at, x, y, row, column, state: actual, reason: move.reason });
         before = actual;
-        if (before !== value) await delay(155);
+        if (before !== value) await delay(move.interval ?? 155);
       }
     }
     for (const move of moves.preparation) await playMove(move);
     const board = await page.locator('#board').boundingBox();
+    const undo = moves.visual ? await page.locator('#undo').boundingBox() : null;
+    const lesson = moves.visual && { ...moves.visual, undo,
+      cells: await page.locator('#board .cell').evaluateAll(cells => cells.map(cell => {
+        const { x, y, width, height } = cell.getBoundingClientRect();
+        return { x, y, width, height };
+      })) };
     const qaBanner = await page.locator('.qa-banner').boundingBox();
     const victoryCropTop = Math.ceil((qaBanner?.y ?? 0) + (qaBanner?.height ?? 0)) + 1;
     const beforeCapture = await shotState();
@@ -116,10 +132,10 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
     const recording = record().then(() => null, error => error);
     const sleepUntil = t => delay(Math.max(0, t * 1000 - (performance.now() - started)));
     for (const [i, move] of moves.visible.entries()) {
-      const point = await cellPoint(move);
-      const t = timeline.start + (timeline.finalTap - timeline.start) * i / (moves.visible.length - 1);
+      const t = move.at ?? (timeline.start + (timeline.finalTap - timeline.start) * i / (moves.visible.length - 1));
       await sleepUntil(t);
-      await playMove(move, point);
+      if (move.action === 'undo') await undoMove(move);
+      else await playMove(move);
     }
     await page.waitForFunction(() => lumenDiagnostics.snapshot().celebrated, null, { timeout: 4000 });
     const ended = (performance.now() - started) / 1000;
@@ -136,7 +152,7 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
     assert(reveal < timeline.cardStarts - 0.8, 'The real victory must be visible before the end card');
     assert.deepEqual(runtimeErrors, [], 'The game must render without script errors');
     const results = { language: options.lang, quest: selected.quest.id, size: selected.quest.size,
-      board, victoryCropTop, startedGuardians: beforeCapture.state.flat().filter(v => v === 2).length,
+      board, lesson, victoryCropTop, startedGuardians: beforeCapture.state.flat().filter(v => v === 2).length,
       gestures, frames, ended, reveal, blockedHosts: [...blocked],
       victoryText: await page.locator('#skyRevealTitle').textContent() };
     await writeFile(join(work, 'capture.json'), JSON.stringify(results, null, 2));

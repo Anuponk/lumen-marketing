@@ -1,4 +1,5 @@
 export const scenarios = {
+  rules: { visibleGuardians: 3, cardStarts: 45, duration: 50, min: 45, max: 60 },
   gameplay: { visibleGuardians: 3, start: 3.35, finalTap: 13.55, cardStarts: 19 },
   'last-guardian': { visibleGuardians: 1, start: 9.4, finalTap: 13.55, cardStarts: 19 },
 };
