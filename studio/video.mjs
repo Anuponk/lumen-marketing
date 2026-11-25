@@ -16,10 +16,10 @@ const spec = JSON.parse(await readFile(join(studio, 'source.json'), 'utf8'));
 const strings = ['lang', 'scenario', 'duration', 'quest', 'constellation', 'difficulty', 'size', 'speed',
   'copy', 'output', 'music', 'game', 'sha', 'chrome', 'ffmpeg', 'ffprobe'];
 const { values } = parseArgs({ options: { ...Object.fromEntries(strings.map(name => [name, { type: 'string' }])),
-  'no-finger': { type: 'boolean' }, 'keep-capture': { type: 'boolean' }, help: { type: 'boolean' } } });
+  'no-finger': { type: 'boolean' }, 'no-music': { type: 'boolean' }, 'no-voice': { type: 'boolean' }, 'keep-capture': { type: 'boolean' }, help: { type: 'boolean' } } });
 if (values.help) {
   console.log('npm run video:generate -- --lang fr --scenario gameplay|last-guardian|rules [--duration SECONDS] [--game PATH] [--output FILE]');
-  console.log('Options: --quest ID|NUMBER, --constellation ID, --difficulty LEVEL, --size N, --speed 0.7–1.25, --copy JSON, --music FILE, --no-finger, --keep-capture, --sha HASH, --chrome PATH, --ffmpeg PATH, --ffprobe PATH');
+  console.log('Options: --quest ID|NUMBER, --constellation ID, --difficulty LEVEL, --size N, --speed 0.7–1.25, --copy JSON, --music FILE, --no-music, --no-voice, --no-finger, --keep-capture, --sha HASH, --chrome PATH, --ffmpeg PATH, --ffprobe PATH');
 } else {
   await main();
 }
@@ -55,8 +55,11 @@ async function main() {
   assert(/\.mp4$/i.test(output), 'The output must have an .mp4 extension');
   const finger = values['no-finger'] ? null : join(studio, '..', 'assets', 'hand.png');
   const text = { ...copy[lang], ...(values.copy ? JSON.parse(await readFile(values.copy, 'utf8')) : {}) };
-  const options = { lang, duration, output, finger, music: values.music ? resolve(values.music) : null };
-  await Promise.all([run(ffmpeg, ['-version']), run(ffprobe, ['-version']), finger ? access(finger) : null]);
+  const voice = rules && !values['no-voice'] ? join(studio, '..', 'assets', 'rules-voice-fr.flac') : null;
+  const music = !values['no-music'] && values.music ? resolve(values.music) : null;
+  const ambient = rules && !values['no-music'] && !music;
+  const options = { lang, duration, output, finger, voice, music, ambient };
+  await Promise.all([run(ffmpeg, ['-version']), run(ffprobe, ['-version']), finger ? access(finger) : null, voice ? access(voice) : null]);
   const selected = await selectQuest(gameRoot, { ...values, size: Number(values.size) });
   let moves = planMoves(selected, timeline.visibleGuardians);
   if (rules) moves = planRules(selected, moves, timeline);
@@ -71,7 +74,7 @@ async function main() {
     await renderArtwork(browser, gameRoot, work, text, capture, timeline);
     await mkdir(dirname(output), { recursive: true });
     await encode(ffmpeg, work, capture, timeline, options);
-    const proof = await verify(ffprobe, output, duration, !!options.music);
+    const proof = await verify(ffprobe, output, duration, Boolean(music || voice || ambient));
     const report = { ...proof, gameSha: sha, scenario, language: lang, quest: selected.quest.id,
       constellation: selected.quest.constellationId, boardSize: selected.quest.size, boardDifficulty: selected.quest.difficulty.label,
       startedGuardians: capture.startedGuardians, touchCount: capture.gestures.length, capturedFrames: capture.frames.length,
