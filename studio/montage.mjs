@@ -119,7 +119,7 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
   // The board keeps a margin on the right and above the platform UI.
   const targetWidth = 910, gameX = 57, gameY = 502;
   const top = Math.max(0, Math.floor(capture.board.y - 60));
-  const bottom = Math.min(viewport.height, Math.ceil(capture.board.y + capture.board.height + 67));
+  const bottom = Math.min(viewport.height, Math.ceil(capture.board.y + capture.board.height + 6));
   const factor = targetWidth / viewport.width;
   const victoryTop = (capture.victoryCropTop ?? 64) * scale;
   const victoryHeight = 1830 - victoryTop;
