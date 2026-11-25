@@ -123,12 +123,15 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
   const factor = targetWidth / viewport.width;
   const victoryTop = (capture.victoryCropTop ?? 64) * scale;
   const victoryHeight = 1830 - victoryTop;
-  const cut = Math.ceil((capture.ended + 0.10) * frameRate) / frameRate;
+  // Keep the board during the game's completion glow, then frame the celestial reveal.
+  const boardCut = Math.floor((capture.reveal - 0.12) * frameRate) / frameRate;
+  const cut = Math.ceil((capture.reveal + 0.08) * frameRate) / frameRate;
   const input = ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'video.ffconcat'];
   for (const name of ['background', 'hook', 'signature', 'card']) input.push('-loop', '1', '-framerate', '30', '-i', name + '.png');
   const filters = [
     '[0:v]fps=30,tpad=stop_duration=0.6:stop_mode=clone,scale=1080:1920:flags=lanczos,setsar=1,split=2[before][after]',
-    '[before]trim=end=' + cut + ',setpts=PTS-STARTPTS,crop=1080:' + ((bottom - top) * scale) + ':0:' + (top * scale) +
+    '[before]trim=end=' + boardCut + ',setpts=PTS-STARTPTS,tpad=stop_duration=' + (cut - boardCut) +
+      ':stop_mode=clone,trim=end=' + cut + ',crop=1080:' + ((bottom - top) * scale) + ':0:' + (top * scale) +
       ',scale=' + targetWidth + ':-2[play]',
     '[after]trim=start=' + cut + ':end=' + timeline.cardStarts + ',setpts=PTS-STARTPTS,crop=1080:' +
       victoryHeight + ':0:' + victoryTop + ',scale=912:-2[win]',
