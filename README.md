@@ -4,6 +4,30 @@ Public promotional assets for LUMEN: https://lumen.nopuna.fr/
 
 ## Lumen Video Studio
 
+### Source saisonnière native (#1056 / #1057 / #1064)
+
+Le catalogue appartient au dépôt LUMEN : `src/campaign/seasonal-events.js`.
+Aucune règle de dates, nom d'événement, hashtag ou campagne n'est recopiée ici.
+Pour un habillage saisonnier, utiliser une copie **propre** de la version LUMEN
+qui contient ce module, puis `--game CHEMIN --sha SHA_COMPLET --date AAAA-MM-JJ`.
+Le Studio importe la présentation à cette date et applique ses textes et couleurs
+aux panneaux du montage. Les captures de campagne gardent la mention de
+démonstration : elles ne simulent pas une tentative officielle du défi futur.
+Le SHA historique par défaut reste utilisable pour les vidéos ordinaires ;
+l'option saisonnière échoue explicitement si son module natif est absent.
+
+Pour les publications du vrai défi, déléguer entièrement au générateur natif :
+
+```sh
+node studio/export-posts.mjs --game CHEMIN --sha SHA_COMPLET --from 2026-12-01 --to 2026-12-31 --output decembre.csv
+node studio/seasonal-tests.mjs CHEMIN
+```
+
+Les grilles initiales, aperçus Open Graph, liens datés, hashtags, UTM et CSV
+viennent de LUMEN. Ce wrapper ne publie rien et ne touche pas Metricool.
+Valider le brouillon et les doublons avant import sur le compte de Rachel,
+en préservant les 15 publications éditoriales de 18h30 et celles déjà programmées.
+
 Le studio capture les écrans et les animations du jeu dans Chromium et produit un MP4 vertical. Il utilise le jeu web `1.11.1+798` au [commit `581cc6d2`](https://github.com/Anuponk/project-menlu/commit/581cc6d298315c281596fb1c72002cfb88d5bf8f). Suivi [#1046](https://github.com/Anuponk/project-menlu/issues/1046).
 
 ### Installation et rendu

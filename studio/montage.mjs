@@ -67,7 +67,9 @@ export async function renderArtwork(browser, gameRoot, work, text) {
         '</div></div>',
     };
     for (const [name, content] of Object.entries(designs)) {
-      await page.setContent('<!doctype html><meta charset="utf-8"><style>' + styles + '</style>' + content);
+      const skin=text.seasonal?.event?.skin;
+      const seasonalStyle=skin?'.brand,.cta{color:'+skin.accent+'}.night{box-shadow:inset 0 0 0 4px '+skin.accent+'}':'';
+      await page.setContent('<!doctype html><meta charset="utf-8"><style>' + styles + seasonalStyle + '</style>' + content);
       await page.evaluate(async () => { await document.fonts.ready; });
       await page.screenshot({ path: join(work, name + '.png'), omitBackground: true });
     }

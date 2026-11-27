@@ -10,10 +10,12 @@ import { captureGame, launchBrowser } from './capture.mjs';
 import { copy, scenarios } from './scenarios.mjs';
 import { encode, renderArtwork, run, verify } from './montage.mjs';
 
+import {seasonalArtwork} from './seasonal.mjs';
+
 const studio = dirname(fileURLToPath(import.meta.url));
 const spec = JSON.parse(await readFile(join(studio, 'source.json'), 'utf8'));
 const strings = ['lang', 'scenario', 'duration', 'quest', 'constellation', 'difficulty', 'size', 'speed',
-  'copy', 'output', 'music', 'game', 'sha', 'chrome', 'ffmpeg', 'ffprobe'];
+  'copy', 'output', 'music', 'game', 'sha', 'chrome', 'ffmpeg', 'ffprobe','date'];
 const { values } = parseArgs({ options: { ...Object.fromEntries(strings.map(name => [name, { type: 'string' }])),
   'no-finger': { type: 'boolean' }, 'keep-capture': { type: 'boolean' }, help: { type: 'boolean' } } });
 if (values.help) {
@@ -46,6 +48,13 @@ async function main() {
   assert(/\.mp4$/i.test(output), 'The output must have an .mp4 extension');
   const finger = values['no-finger'] ? null : join(studio, '..', 'assets', 'hand.png');
   const text = { ...copy[lang], ...(values.copy ? JSON.parse(await readFile(values.copy, 'utf8')) : {}) };
+  const seasonal=await seasonalArtwork(gameRoot,values.date,lang);
+  if(seasonal?.event){
+   text.hook=seasonal.title+' · '+seasonal.previewLabel;
+   text.play=seasonal.title+' · '+seasonal.previewLabel;
+   text.url='lumen.nopuna.fr/d/'+values.date+'/';
+   text.seasonal=seasonal;
+  }
   const options = { lang, duration, output, finger, music: values.music ? resolve(values.music) : null };
   await Promise.all([run(ffmpeg, ['-version']), run(ffprobe, ['-version']), finger ? access(finger) : null]);
   const selected = await selectQuest(gameRoot, { ...values, size: Number(values.size) });
@@ -62,7 +71,7 @@ async function main() {
     await mkdir(dirname(output), { recursive: true });
     await encode(ffmpeg, work, capture, timeline, options);
     const proof = await verify(ffprobe, output, duration, !!options.music);
-    const report = { ...proof, gameSha: sha, scenario, language: lang, quest: selected.quest.id,
+    const report = { ...proof, gameSha: sha, eventId: seasonal?.event?.id??null, creativeDay: values.date??null, scenario, language: lang, quest: selected.quest.id,
       constellation: selected.quest.constellationId, boardSize: selected.quest.size, boardDifficulty: selected.quest.difficulty.label,
       startedGuardians: capture.startedGuardians, touchCount: capture.gestures.length, capturedFrames: capture.frames.length,
       victorySeconds: capture.reveal, victoryTitle: capture.victoryText, externalRequestsAllowed: 0 };
