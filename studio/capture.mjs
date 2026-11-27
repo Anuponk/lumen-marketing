@@ -13,7 +13,8 @@ export async function launchBrowser(executablePath) {
 }
 
 export async function captureGame(browser, origin, selected, moves, timeline, work, options) {
-  const context = await browser.newContext({ viewport, deviceScaleFactor: scale, isMobile: true,
+  const captureScale = options.seasonalPreview ? 2 : scale;
+  const context = await browser.newContext({ viewport, deviceScaleFactor: captureScale, isMobile: true,
     hasTouch: true, locale: options.lang, serviceWorkers: 'block' });
   const blocked = new Set();
   try {
@@ -37,16 +38,25 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
     const page = await context.newPage();
     const runtimeErrors = [];
     page.on('pageerror', error => runtimeErrors.push(error.message));
-    await page.goto(origin + '/?qa=new', { waitUntil: 'load' });
-    await page.waitForFunction(() => !!window.lumenDiagnostics && document.querySelectorAll('#board .cell').length > 0);
-    await page.evaluate(index => {
+    let game = page;
+    if (options.seasonalPreview) {
+      await page.goto(origin + '/studio/?' + new URLSearchParams({ date: options.seasonalPreview.day, lang: options.lang }), { waitUntil: 'load' });
+      await page.addStyleTag({ content: 'main{width:100%!important;padding:0!important}main>:not(iframe){display:none!important}iframe{width:100%!important;height:100vh!important;border:0!important;border-radius:0!important}' });
+      const frame = await page.locator('#seasonal-preview').elementHandle();
+      game = await frame.contentFrame();
+      assert(game, 'LUMEN native seasonal preview frame');
+    } else {
+      await page.goto(origin + '/?qa=new', { waitUntil: 'load' });
+    }
+    await game.waitForFunction(() => !!window.lumenDiagnostics && document.querySelectorAll('#board .cell').length > 0);
+    if (!options.seasonalPreview) await game.evaluate(index => {
       if (lumenDiagnostics.snapshot().levelIndex !== index) lumenDiagnostics.setupQuest(index);
     }, selected.quest.legacyIndex);
     for (const selector of ['#learningSkip','#learningCoachDismiss','#badgeUnlockOk','#autoCrossUnlockOk','#questGo','#attemptMask']) {
-      const button = page.locator(selector);
+      const button = game.locator(selector);
       if (await button.isVisible()) await button.tap({ timeout: 3000 });
     }
-    const shotState = () => page.evaluate(() => {
+    const shotState = () => game.evaluate(() => {
       const { n, levelIndex, puz, state, celebrated } = lumenDiagnostics.snapshot();
       return { n, levelIndex, reg: puz.reg, state, celebrated, lang: document.documentElement.lang };
     });
@@ -58,7 +68,7 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
     const gestures = [];
     let started, captureOn = false;
     const cellPoint = async ({ row, column }) => {
-      const cell = page.locator('#board .cell').nth(row * initial.n + column);
+      const cell = game.locator('#board .cell').nth(row * initial.n + column);
       const box = await cell.boundingBox();
       if (!box) throw Error('Board cell lost its layout');
       const x = Math.round(box.x + box.width / 2), y = Math.round(box.y + box.height / 2);
@@ -82,8 +92,8 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
       }
     }
     for (const move of moves.preparation) await playMove(move);
-    const board = await page.locator('#board').boundingBox();
-    const qaBanner = await page.locator('.qa-banner').boundingBox();
+    const board = await game.locator('#board').boundingBox();
+    const qaBanner = options.seasonalPreview ? null : await game.locator('.qa-banner').boundingBox();
     const victoryCropTop = Math.ceil((qaBanner?.y ?? 0) + (qaBanner?.height ?? 0)) + 1;
     const beforeCapture = await shotState();
     assert.equal(beforeCapture.state.flat().filter(v => v === 2).length, selected.quest.size - timeline.visibleGuardians);
@@ -91,7 +101,7 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
     const firstFrame = 'frames/000000.jpg';
     await page.screenshot({ path: join(work, firstFrame), type: 'jpeg', quality: 96 });
     const session = await context.newCDPSession(page);
-    await session.send('Emulation.setDeviceMetricsOverride', { ...viewport, mobile: true, deviceScaleFactor: scale,
+    await session.send('Emulation.setDeviceMetricsOverride', { ...viewport, mobile: true, deviceScaleFactor: captureScale,
       screenWidth: viewport.width, screenHeight: viewport.height });
     const { visualViewport } = await session.send('Page.getLayoutMetrics');
     const clip = { x: visualViewport.pageX, y: visualViewport.pageY, ...viewport, scale: visualViewport.scale };
@@ -121,9 +131,10 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
       await sleepUntil(t);
       await playMove(move, point);
     }
-    await page.waitForFunction(() => lumenDiagnostics.snapshot().celebrated, null, { timeout: 4000 });
+    await game.waitForFunction(() => lumenDiagnostics.snapshot().celebrated, null, { timeout: 4000 });
     const ended = (performance.now() - started) / 1000;
-    await page.waitForFunction(() => !document.getElementById('skyReveal').hidden, null, { timeout: 4500 });
+    const victory = options.seasonalPreview ? ['dailyResultModal','dailyResultTitle'] : ['skyReveal','skyRevealTitle'];
+    await game.waitForFunction(id => !document.getElementById(id).hidden, victory[0], { timeout: 4500 });
     const reveal = (performance.now() - started) / 1000;
     const final = await shotState();
     assert.deepEqual(final.state.map(row => row.indexOf(2)), selected.solution);
@@ -136,9 +147,9 @@ export async function captureGame(browser, origin, selected, moves, timeline, wo
     assert(reveal < timeline.cardStarts - 0.8, 'The real victory must be visible before the end card');
     assert.deepEqual(runtimeErrors, [], 'The game must render without script errors');
     const results = { language: options.lang, quest: selected.quest.id, size: selected.quest.size,
-      board, victoryCropTop, startedGuardians: beforeCapture.state.flat().filter(v => v === 2).length,
+      board, captureScale, victoryCropTop, startedGuardians: beforeCapture.state.flat().filter(v => v === 2).length,
       gestures, frames, ended, reveal, blockedHosts: [...blocked],
-      victoryText: await page.locator('#skyRevealTitle').textContent() };
+      victoryText: await game.locator('#'+victory[1]).textContent() };
     await writeFile(join(work, 'capture.json'), JSON.stringify(results, null, 2));
     return results;
   } finally {

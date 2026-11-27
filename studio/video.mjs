@@ -17,10 +17,10 @@ const spec = JSON.parse(await readFile(join(studio, 'source.json'), 'utf8'));
 const strings = ['lang', 'scenario', 'duration', 'quest', 'constellation', 'difficulty', 'size', 'speed',
   'copy', 'output', 'music', 'game', 'sha', 'chrome', 'ffmpeg', 'ffprobe','date'];
 const { values } = parseArgs({ options: { ...Object.fromEntries(strings.map(name => [name, { type: 'string' }])),
-  'no-finger': { type: 'boolean' }, 'keep-capture': { type: 'boolean' }, help: { type: 'boolean' } } });
+  'no-finger': { type: 'boolean' }, 'keep-capture': { type: 'boolean' }, 'seasonal-preview': { type: 'boolean' }, help: { type: 'boolean' } } });
 if (values.help) {
   console.log('npm run video:generate -- --lang fr --scenario gameplay --duration 24 [--game PATH] [--output FILE]');
-  console.log('Options: --quest ID|NUMBER, --constellation ID, --difficulty LEVEL, --size N, --speed 0.7–1.25, --copy JSON, --music FILE, --no-finger, --keep-capture, --sha HASH, --chrome PATH, --ffmpeg PATH, --ffprobe PATH');
+  console.log('Options: --quest ID|NUMBER, --constellation ID, --difficulty LEVEL, --size N, --speed 0.7–1.25, --copy JSON, --music FILE, --no-finger, --keep-capture, --date YYYY-MM-DD, --seasonal-preview, --sha HASH, --chrome PATH, --ffmpeg PATH, --ffprobe PATH');
 } else {
   await main();
 }
@@ -49,15 +49,16 @@ async function main() {
   const finger = values['no-finger'] ? null : join(studio, '..', 'assets', 'hand.png');
   const text = { ...copy[lang], ...(values.copy ? JSON.parse(await readFile(values.copy, 'utf8')) : {}) };
   const seasonal=await seasonalArtwork(gameRoot,values.date,lang);
+  const seasonalPreview = values['seasonal-preview'] ? seasonal : null;
   if(seasonal?.event){
    text.hook=seasonal.title+' · '+seasonal.previewLabel;
    text.play=seasonal.title+' · '+seasonal.previewLabel;
    text.url='lumen.nopuna.fr/d/'+seasonal.day+'/';
    text.seasonal=seasonal;
   }
-  const options = { lang, duration, output, finger, music: values.music ? resolve(values.music) : null };
+  const options = { lang, duration, output, finger, seasonalPreview, music: values.music ? resolve(values.music) : null };
   await Promise.all([run(ffmpeg, ['-version']), run(ffprobe, ['-version']), finger ? access(finger) : null]);
-  const selected = await selectQuest(gameRoot, { ...values, size: Number(values.size) });
+  const selected = await selectQuest(gameRoot, seasonalPreview ? { quest: 1, seasonalPreview: true } : { ...values, size: Number(values.size) });
   const moves = planMoves(selected, timeline.visibleGuardians);
   const work = await mkdtemp(join(tmpdir(), 'lumen-capture-'));
   const server = await serveGame(gameRoot);

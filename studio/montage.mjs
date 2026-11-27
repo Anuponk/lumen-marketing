@@ -123,8 +123,10 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
   const top = Math.max(0, Math.floor(capture.board.y - 60));
   const bottom = Math.min(viewport.height, Math.ceil(capture.board.y + capture.board.height + 6));
   const factor = targetWidth / viewport.width;
-  const victoryTop = (capture.victoryCropTop ?? 64) * scale;
-  const victoryHeight = 1830 - victoryTop;
+  const sourceScale = capture.captureScale ?? scale;
+  const sourceWidth = viewport.width * sourceScale;
+  const victoryTop = (capture.victoryCropTop ?? 64) * sourceScale;
+  const victoryHeight = (viewport.height - 30) * sourceScale - victoryTop;
   // Keep the board during the game's completion glow, then frame the celestial reveal.
   const boardCut = Math.floor((capture.reveal - 0.12) * frameRate) / frameRate;
   const cut = Math.ceil((capture.reveal + 0.08) * frameRate) / frameRate;
@@ -133,9 +135,9 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
   const filters = [
     '[0:v]fps=30,setsar=1,split=2[before][after]',
     '[before]trim=end=' + boardCut + ',tpad=stop_duration=' + (cut - boardCut + 0.1) +
-      ':stop_mode=clone,crop=1080:' + ((bottom - top) * scale) + ':0:' + (top * scale) +
+      ':stop_mode=clone,crop=' + sourceWidth + ':' + ((bottom - top) * sourceScale) + ':0:' + (top * sourceScale) +
       ',scale=' + targetWidth + ':-2[play]',
-    '[after]crop=1080:' + victoryHeight + ':0:' + victoryTop + ',scale=912:-2[win]',
+    '[after]crop=' + sourceWidth + ':' + victoryHeight + ':0:' + victoryTop + ',scale=912:-2[win]',
     '[1:v][play]overlay=' + gameX + ':' + gameY + ":enable='lt(t," + cut + ")'[screen]",
     "[screen][2:v]overlay=0:0:enable='lt(t,3.0)'[intro]",
     "[intro][3:v]overlay=0:0:enable='gte(t,3.0)*lt(t," + cut + ")'[signature]",
@@ -153,7 +155,7 @@ export async function encode(ffmpeg, work, capture, timeline, options) {
   filters.push("[celebration][4:v]overlay=0:0:enable='gte(t," + timeline.cardStarts + ")',scale=out_range=tv,format=yuv420p[out]");
   await writeFile(join(work, 'montage.ffmpeg'), filters.join(';\n'));
   const audio = options.music ? ['-stream_loop', '-1', '-i', options.music] : [];
-  await run(ffmpeg, [...input, ...audio, '-filter_complex_threads', '2', '-/filter_complex', 'montage.ffmpeg',
+  await run(ffmpeg, [...input, ...audio, '-filter_complex_threads', '2', '-filter_complex', filters.join(';\n'),
     '-map', '[out]', ...(options.music ? ['-map', (options.finger ? '6' : '5') + ':a:0', '-c:a', 'aac', '-b:a', '160k',
       '-af', 'volume=0.34,afade=t=in:st=0:d=0.4,afade=t=out:st=' + (options.duration - 1.5) + ':d=1.5'] : ['-an']),
     '-c:v', 'libx264', '-threads', '5', '-preset', 'veryfast', '-crf', '18', '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p', '-color_range', 'tv',
