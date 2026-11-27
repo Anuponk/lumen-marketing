@@ -8,13 +8,15 @@ Public promotional assets for LUMEN: https://lumen.nopuna.fr/
 
 Le catalogue appartient au dépôt LUMEN : `src/campaign/seasonal-events.js`.
 Aucune règle de dates, nom d'événement, hashtag ou campagne n'est recopiée ici.
-Pour un habillage saisonnier, utiliser une copie **propre** de la version LUMEN
-qui contient ce module, puis `--game CHEMIN --sha SHA_COMPLET --date AAAA-MM-JJ`.
-Le Studio importe la présentation à cette date et applique ses textes et couleurs
+Utiliser une copie **propre** de la version LUMEN qui contient ce module,
+épinglée dans `studio/source.json`, ou `--game CHEMIN --sha SHA_COMPLET`.
+Le Studio utilise automatiquement la date native de Paris. L'option
+`--date AAAA-MM-JJ` permet de prévisualiser un habillage. Il importe la
+présentation à cette date et applique ses textes et couleurs
 aux panneaux du montage. Les captures de campagne gardent la mention de
 démonstration : elles ne simulent pas une tentative officielle du défi futur.
-Le SHA historique par défaut reste utilisable pour les vidéos ordinaires ;
-l'option saisonnière échoue explicitement si son module natif est absent.
+Une source historique sans configuration native est refusée explicitement,
+plutôt que de créer un calendrier de substitution dans ce dépôt.
 
 Pour les publications du vrai défi, déléguer entièrement au générateur natif :
 
@@ -28,7 +30,7 @@ viennent de LUMEN. Ce wrapper ne publie rien et ne touche pas Metricool.
 Valider le brouillon et les doublons avant import sur le compte de Rachel,
 en préservant les 15 publications éditoriales de 18h30 et celles déjà programmées.
 
-Le studio capture les écrans et les animations du jeu dans Chromium et produit un MP4 vertical. Il utilise le jeu web `1.11.1+798` au [commit `581cc6d2`](https://github.com/Anuponk/project-menlu/commit/581cc6d298315c281596fb1c72002cfb88d5bf8f). Suivi [#1046](https://github.com/Anuponk/project-menlu/issues/1046).
+Le studio capture les écrans et les animations du jeu dans Chromium et produit un MP4 vertical. Sa source par défaut est le jeu web `1.11.1+811` au [commit `63afd2c6`](https://github.com/Anuponk/project-menlu/commit/63afd2c6b445ab4d5918636c2cf6665b423cc6c8), avec la configuration saisonnière native. Les MP4 du lot initial gardent leur provenance historique `581cc6d2` ; ce changement ne les régénère pas. Suivi [#1046](https://github.com/Anuponk/project-menlu/issues/1046).
 
 ### Installation et rendu
 
@@ -38,7 +40,7 @@ Depuis le dépôt marketing :
 
 ```sh
 git clone https://github.com/Anuponk/project-menlu.git ../lumen-video-game-reference
-git -C ../lumen-video-game-reference checkout --detach 581cc6d298315c281596fb1c72002cfb88d5bf8f
+git -C ../lumen-video-game-reference checkout --detach 63afd2c6b445ab4d5918636c2cf6665b423cc6c8
 npm ci
 npm run video:generate -- --lang fr --scenario gameplay --duration 24
 npm run video:generate -- --lang en --scenario gameplay --duration 24

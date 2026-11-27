@@ -52,7 +52,7 @@ async function main() {
   if(seasonal?.event){
    text.hook=seasonal.title+' · '+seasonal.previewLabel;
    text.play=seasonal.title+' · '+seasonal.previewLabel;
-   text.url='lumen.nopuna.fr/d/'+values.date+'/';
+   text.url='lumen.nopuna.fr/d/'+seasonal.day+'/';
    text.seasonal=seasonal;
   }
   const options = { lang, duration, output, finger, music: values.music ? resolve(values.music) : null };
@@ -71,7 +71,7 @@ async function main() {
     await mkdir(dirname(output), { recursive: true });
     await encode(ffmpeg, work, capture, timeline, options);
     const proof = await verify(ffprobe, output, duration, !!options.music);
-    const report = { ...proof, gameSha: sha, eventId: seasonal?.event?.id??null, creativeDay: values.date??null, scenario, language: lang, quest: selected.quest.id,
+    const report = { ...proof, gameSha: sha, eventId: seasonal?.event?.id??null, creativeDay: seasonal?.day??null, scenario, language: lang, quest: selected.quest.id,
       constellation: selected.quest.constellationId, boardSize: selected.quest.size, boardDifficulty: selected.quest.difficulty.label,
       startedGuardians: capture.startedGuardians, touchCount: capture.gestures.length, capturedFrames: capture.frames.length,
       victorySeconds: capture.reveal, victoryTitle: capture.victoryText, externalRequestsAllowed: 0 };
