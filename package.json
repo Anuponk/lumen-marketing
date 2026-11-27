@@ -1,0 +1,14 @@
+{
+  "name": "lumen-video-studio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "video:generate": "node studio/video.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "playwright-core": "1.65.1"
+  }
+}
