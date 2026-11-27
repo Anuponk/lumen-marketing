@@ -11,10 +11,11 @@ const types = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 't
 
 export async function serveGame(root) {
   root = await realpath(root);
-  const allowed = /^(?:index\.html|icon(?:-maskable)?\.svg|manifest\.webmanifest|sw\.js|(?:src|content)\/[^.].*)$/;
+  const allowed = /^(?:index\.html|studio\/index\.html|icon(?:-maskable)?\.svg|manifest(?:-en|-es)?\.webmanifest|sw\.js|(?:src|content)\/[^.].*)$/;
   const server = createServer(async (req, res) => {
     try {
-      const requested = decodeURIComponent(new URL(req.url, 'http://localhost').pathname).slice(1) || 'index.html';
+      const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname).slice(1);
+      const requested = path === 'studio/' ? 'studio/index.html' : path || 'index.html';
       if (!allowed.test(requested) || requested.split('/').some(part => part.startsWith('.'))) {
         res.writeHead(404).end();
         return;
@@ -38,7 +39,7 @@ export async function serveGame(root) {
     close: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }) };
 }
 
-export async function selectQuest(root, { quest: target, constellation, difficulty, size }) {
+export async function selectQuest(root, { quest: target, constellation, difficulty, size, seasonalPreview = false }) {
   const load = file => import(pathToFileURL(join(root, file)).href);
   const { canonicalQuestList } = await load('src/campaign/canonical-quests.js');
   const { createGameEngine } = await load('src/game/engine.js');
@@ -52,7 +53,7 @@ export async function selectQuest(root, { quest: target, constellation, difficul
   const candidate = target ? quests.find(q => q.id === target || q.ordinal === Number(target)) :
     (constellation || level || size ? quests.find(q => q.legacyIndex !== null && q.ordinal > 2 && matches(q)) :
       quests.find(q => q.id === 'base-q006'));
-  assert(candidate && candidate.ordinal > 2 && candidate.legacyIndex !== null && matches(candidate),
+  assert(candidate && (seasonalPreview ? candidate.legacyIndex === 0 : candidate.ordinal > 2) && candidate.legacyIndex !== null && matches(candidate),
     'Choose an existing catalogue quest with a legacy grid, outside the two mandatory tutorial quests.');
   const progress = {
     solved: Object.fromEntries(quests.filter(q => q.ordinal < candidate.ordinal && q.legacyIndex !== null)

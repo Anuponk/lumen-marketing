@@ -30,6 +30,13 @@ viennent de LUMEN. Ce wrapper ne publie rien et ne touche pas Metricool.
 Valider le brouillon et les doublons avant import sur le compte de Rachel,
 en préservant les 15 publications éditoriales de 18h30 et celles déjà programmées.
 
+Avec une source LUMEN qui contient l’aperçu natif dans `/studio/`, ajouter
+`--seasonal-preview --date 2026-12-01` pour enregistrer de vrais gestes sur
+la grille d’initiation et la célébration de l’Avent. L’aperçu de démonstration
+ne prend jamais une future grille officielle. Les JPEG officiels datés sont
+préparés à part, depuis le calendrier privé de LUMEN, pour un ajout depuis
+l’appareil dans Metricool après validation.
+
 Le studio capture les écrans et les animations du jeu dans Chromium et produit un MP4 vertical. Sa source par défaut est le jeu web `1.11.1+811` au [commit `63afd2c6`](https://github.com/Anuponk/project-menlu/commit/63afd2c6b445ab4d5918636c2cf6665b423cc6c8), avec la configuration saisonnière native. Les MP4 du lot initial gardent leur provenance historique `581cc6d2` ; ce changement ne les régénère pas. Suivi [#1046](https://github.com/Anuponk/project-menlu/issues/1046).
 
 ### Installation et rendu
@@ -58,6 +65,7 @@ Chaque commande crée `output/lumen-gameplay-trailer-<lang>.mp4` et son rapport 
 | `--duration`, `--speed` | Durée de 20 à 25 secondes entières, 24 par défaut. Vitesse de 0,7 à 1,25 avec un point décimal, 1 par défaut. |
 | `--copy` | Fichier JSON facultatif avec les champs `hook`, `constellations`, `free`, `play`, `url`. |
 | `--no-finger` | Désactive le doigt animé. |
+| `--seasonal-preview` | Capture le véritable écran saisonnier en mode démonstration. |
 | `--music` | Piste locale dont vous détenez les droits nécessaires. Encodage AAC avec fondus. |
 | `--output` | Chemin du MP4 à produire. |
 | `--keep-capture` | Conserve le dossier temporaire avec les images et `capture.json`. |
